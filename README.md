@@ -15,7 +15,7 @@ pip install git+https://github.com/thomgrand/torch_spsolve
 Note that to use the library on the GPU, cupy needs to be installed. In case you want to install it from source, you can simply call
 
 ```bash
-pip install git+https://github.com/thomgrand/torch_spsolve[gpu]
+pip install git+https://github.com/thomgrand/torch_spsolve#egg=torch_spsolve[gpu]
 ```
 
 Pre-built binaries are also available for cupy though. Further information is available here [https://docs.cupy.dev/en/stable/install.html#installing-cupy](https://docs.cupy.dev/en/stable/install.html#installing-cupy).
