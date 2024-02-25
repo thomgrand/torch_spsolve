@@ -121,7 +121,7 @@ def test_factorization(create_sparse_system):
     sparse_op_instance.factorize()
     _test_against_scipy(sparse_op, rhs, sparse_op_instance.solve(rhs))
 
-@pytest.mark.parametrize("create_sparse_system", [dict(size=20, dtype=torch.float64, device=torch.device("cuda"), multi_rhs=True)], indirect=True)
+@pytest.mark.parametrize("create_sparse_system", [dict(size=20, dtype=torch.float64, device=torch.device("cpu"), multi_rhs=True)], indirect=True)
 def test_sparse_rhs(create_sparse_system):
     sparse_op, rhs = create_sparse_system
     with torch.no_grad():
