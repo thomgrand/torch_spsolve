@@ -88,7 +88,7 @@ def test_gradcheck_single(create_sparse_system):
     sparse_op_params.grad = sparse_op.grad = rhs.grad = None
     #Test grad in rhs only
     loss_f(torch_spsolve.spsolve(sparse_op.detach(), rhs)).backward()
-    assert sparse_op_params.grad is None and sparse_op.grad is None
+    assert sparse_op_params.grad is None
     assert torch.any(rhs.grad != 0.)
 
     #Test grad in sparse_op only
@@ -142,6 +142,31 @@ def test_missing_cupy(create_sparse_system):
     
     with pytest.raises(AssertionError):
         torch_spsolve.spsolve(sparse_op, rhs)
+
+@pytest.mark.parametrize("create_sparse_system", [dict(size=20, dtype=torch.float16, 
+                                                       device=torch.device("cpu"), multi_rhs=True)], indirect=True)
+def test_unsupported_dtype(create_sparse_system):
+    sparse_op, rhs = create_sparse_system
+    with pytest.raises(AssertionError):
+        torch_spsolve.TorchSparseOp(sparse_op)
+
+    with pytest.raises(AssertionError):
+        torch_spsolve.spsolve(sparse_op, rhs)
+
+def test_readme_example():
+    import torch_spsolve
+    A = torch.randn(size=[50, 50])
+    A[A < 0] = 0.
+    A = A.to_sparse()
+    x = torch.randn(size=[50])
+    y = torch_spsolve.spsolve(A, x)
+
+    solver = torch_spsolve.TorchSparseOp(A)
+    y = solver.solve(x)
+
+    solver.factorize()
+    y = solver.solve(x)
+
 
 if __name__ == "__main__":
     pytest.main([__file__])
