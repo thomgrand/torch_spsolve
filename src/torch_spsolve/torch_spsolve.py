@@ -21,7 +21,9 @@ except ModuleNotFoundError as err:
     _cupy_available = False
 
 _torch_dtype_map = {torch.float32: np.float32,
-                    torch.float64: np.float64}
+                    torch.float64: np.float64,
+                    torch.complex64: np.complex64,
+                    torch.complex128: np.complex128}
 
 
 def _solve_f(tens : np.ndarray) -> Callable[[np.ndarray], np.ndarray]: return (spsolve_cp if tens.is_cuda else spsolve_np)
@@ -47,7 +49,8 @@ def _convert_sparse_to_lib(tens : torch.Tensor) -> coo_matrix:
     assert tens.is_coalesced(), f"Uncoalesced tensor found, usage is only supported through {TorchSparseOp.__name__}"
     indices = tens.indices()
     data = tens.values().detach()
-    assert tens.dtype in _torch_dtype_map, f"Unknown or unsupported dtype: {tens.dtype}. Only {list(_torch_dtype_map.keys())} are supported."
+    assert tens.dtype in _torch_dtype_map, (f"Unknown or unsupported dtype: {tens.dtype}."
+                                            + " Only {list(_torch_dtype_map.keys())} are supported.")
     if tens.is_cuda:
         return coo_matrix_cp((cp.asarray(data), (cp.asarray(indices[0]), cp.asarray(indices[1]))),
                              shape=tens.shape, dtype=_torch_dtype_map[tens.dtype])
@@ -77,7 +80,7 @@ class TorchSparseOp(Module):
                                                               + "If you intend to use the CPU version, call .cpu() first.")
         self.tens = sparse_tensor.coalesce()
         self.tens_copy = _convert_sparse_to_lib(self.tens).tocsr()
-        self.tens_copy_T = _convert_sparse_to_lib(self.tens.T.coalesce()).tocsr()
+        self.tens_copy_H = _convert_sparse_to_lib(self.tens.H.coalesce()).tocsr()
         self.factor = None
         self._convert_f = _convert_f
         self._inv_convert_f = lambda x: _inv_convert_f(x, sparse_tensor.dtype, sparse_tensor.device)
@@ -90,9 +93,9 @@ class TorchSparseOp(Module):
         """
         tens_copy = self.tens_copy.tocsc()
         if self.is_cuda:
-            self.factors = (splu_cp(tens_copy), splu_cp(self.tens_copy.T))
+            self.factors = (splu_cp(tens_copy), splu_cp(self.tens_copy_H.tocsc()))
         else:
-            self.factors = (splu(tens_copy), splu(self.tens_copy.T))
+            self.factors = (splu(tens_copy), splu(self.tens_copy_H.tocsc()))
         self._factorized = True
 
     def solve(self, x : torch.Tensor) -> torch.Tensor:
@@ -123,7 +126,7 @@ class TorchSparseOp(Module):
             sol = factor.solve(x_)
         else:
             if transpose:
-                sol = self._solve_f(self.tens_copy_T, x_)
+                sol = self._solve_f(self.tens_copy_H, x_)
             else:
                 sol = self._solve_f(self.tens_copy, x_)
 
@@ -136,7 +139,7 @@ class TorchSparseOp(Module):
 
 
 class _TorchSparseOpF(torch.autograd.Function):
-    # Internal sparse operator test function that takes the sparse operator :ref:`TorchSparseOp` and
+    # Internal sparse operator function that takes the sparse operator :ref:`TorchSparseOp` and
     # returns the solution while keeping the results and operators for backpropagation.
     @staticmethod
     def forward(ctx : FunctionCtx, tens_op : torch.Tensor, rhs : torch.Tensor, sparse_op : TorchSparseOp):
@@ -145,6 +148,7 @@ class _TorchSparseOpF(torch.autograd.Function):
         sol.requires_grad = tens_op.requires_grad or rhs.requires_grad
         ctx.sparse_op = sparse_op
         ctx.save_for_backward(tens_op, sol)
+        
         return sol
 
     @staticmethod
@@ -160,14 +164,20 @@ class _TorchSparseOpF(torch.autograd.Function):
         grad_rhs = sparse_op._solve_impl(grad_in, True)
 
         indices = tens_op.indices()
-        sparse_op_diff_values = -(grad_rhs[indices[0]] * sol[indices[1]])
+        sol_inds = sol[indices[1]]
+        #Complex gradient requires an additional conjugation
+        if sol_inds.dtype.is_complex:
+            sol_inds = torch.conj(sol_inds)
+            
+        sparse_op_diff_values = -(grad_rhs[indices[0]] * sol_inds)
         # Multi-rhs check
         if sparse_op_diff_values.ndim > 1:
             sparse_op_diff_values = sparse_op_diff_values.flatten()
             indices = indices[..., None].expand(list(indices.shape) + [sol.shape[-1]]).reshape([2, -1])
 
         grad_op = torch.sparse_coo_tensor(values=sparse_op_diff_values, indices=indices, size=tens_op.shape,
-                                          dtype=tens_op.dtype, device=tens_op.device)
+                                        dtype=tens_op.dtype, device=tens_op.device)
+
         return grad_op, grad_rhs, None
 
 

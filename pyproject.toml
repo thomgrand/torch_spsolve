@@ -1,6 +1,6 @@
 [project]
 name = "torch_spsolve"
-version = "1.0"
+version = "1.1"
 authors = [
   { name="Thomas Grandits", email="tomdev@gmx.net" },
 ]

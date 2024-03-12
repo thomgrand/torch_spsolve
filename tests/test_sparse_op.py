@@ -2,7 +2,6 @@
 import numpy as np
 import torch
 import pytest
-import scipy.sparse
 import torch_spsolve
 from typing import Dict
 from itertools import product
@@ -22,9 +21,11 @@ def create_sparse_system(rand_gen, request : Dict): #size : int, dtype : torch.d
     #Creates a random sparse linear system
     size, dtype, device = request.param["size"], request.param["dtype"], request.param["device"]
     dense_op = torch.randn(size=[size, size], dtype=dtype, device=device)
-    zero_mask = torch.rand(size=[size, size], dtype=dtype, device=device) < 0.2
+    zero_mask = torch.rand(size=[size, size], dtype=torch.float32, device=device) < 0.2
     dense_op = dense_op * zero_mask
     dense_op += 1e-2 * torch.eye(size, dtype=dtype, device=device) #Make the system well-posed
+    if dtype.is_complex:
+        dense_op -= 1e-2 * 1.j * torch.eye(size, dtype=dtype, device=device)
     nnz = dense_op.nonzero()
     values = dense_op[nnz[:, 0], nnz[:, 1]]
     values.requires_grad = True
@@ -43,16 +44,16 @@ def _sparse_tensor_to_np(sparse_op : torch.Tensor) -> coo_matrix:
     sparse_op = sparse_op.detach().cpu().coalesce()
     nnz = sparse_op.indices().numpy()
     values = sparse_op.values().numpy()
-    return coo_matrix((values, nnz)).tocsr()
+    return coo_matrix((values, nnz), shape=sparse_op.shape).tocsr()
 
 _sizes_sparse_op = [20, 50, 200]
-_dtypes = [torch.float32, torch.float64]
+_dtypes = [torch.float32, torch.float64, torch.complex64, torch.complex128]
 _devices = [torch.device("cpu")] + ([torch.device("cuda")] if _cuda_available else [])
 _multi_rhs = [False, True]
 _sparse_op_param_dicts = [{"size": s, "dtype": dt, "device": de, "multi_rhs": mr} for s, dt, de, mr in product(_sizes_sparse_op, _dtypes, _devices, 
                                                                                                                   _multi_rhs)]
 #For the gradient checks, we only allow double precision (single is too inaccurate for gradient estimation in our case)
-_sparse_op_param_grad_dicts = [d | dict(ret_param=True) for d in _sparse_op_param_dicts if d["size"] < 50 and d["dtype"] == torch.float64]
+_sparse_op_param_grad_dicts = [d | dict(ret_param=True) for d in _sparse_op_param_dicts if d["size"] < 50 and d["dtype"] in [torch.float64, torch.complex128]]
 _sparse_op_param_grad_multi_rhs_dicts = [d for d in _sparse_op_param_grad_dicts if d["multi_rhs"]]
 _sparse_op_param_grad_single_rhs_dicts = [d for d in _sparse_op_param_grad_dicts if not d["multi_rhs"]]
 
@@ -60,7 +61,7 @@ def _test_against_scipy(sparse_op : torch.Tensor, rhs : torch.Tensor, sol_lib : 
     dtype = rhs.dtype
     sol_lib = sol_lib.detach().cpu().numpy()
     sol_ref = spsolve_ref(_sparse_tensor_to_np(sparse_op), rhs.detach().cpu().numpy())
-    np.testing.assert_almost_equal(sol_lib, sol_ref, decimal=(2 if dtype == torch.float32 else 6))
+    np.testing.assert_almost_equal(sol_lib, sol_ref, decimal=(2 if dtype in [torch.float32, torch.complex64] else 6))
 
 @pytest.mark.parametrize("create_sparse_system", _sparse_op_param_grad_single_rhs_dicts, indirect=True)
 def test_gradcheck_single_rhs(create_sparse_system):
@@ -110,7 +111,7 @@ def test_instance_call(create_sparse_system):
     sparse_op_instance = torch_spsolve.TorchSparseOp(sparse_op)
     _test_against_scipy(sparse_op, rhs, sparse_op_instance.solve(rhs))
 
-    #Change if the result is robust to changes in the rhs
+    #Check if the result is robust to changes in the rhs
     rhs = rhs + torch.randn(size=rhs.shape, dtype=rhs.dtype, device=rhs.device)
     _test_against_scipy(sparse_op, rhs, sparse_op_instance.solve(rhs))
 

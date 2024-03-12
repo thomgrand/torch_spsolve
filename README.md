@@ -3,7 +3,7 @@
 [![CI Tests](https://github.com/thomgrand/torch_spsolve/actions/workflows/python-package.yml/badge.svg)](https://github.com/thomgrand/torch_spsolve/actions/workflows/python-package.yml)
 
 This library implements functionality similar to [spsolve](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.linalg.spsolve.html) in scipy to solve linear systems of the type `Ay = x`.
-The provided functions work seamlessly with gradients in `A` (nonzeros only) and `y` and are implemented on the CPU (requires [scipy](https://scipy.org/)) and GPU (requires [cupy](https://cupy.dev/)).
+The provided functions work seamlessly with gradients in `A` (nonzeros only) and `y` and are implemented on the CPU (requires [scipy](https://scipy.org/)) and GPU (requires [cupy](https://cupy.dev/)). The library also provides support for complex numbers using the dtypes `torch.complex64`/`torch.complex128`.
 
 # Installation
 
