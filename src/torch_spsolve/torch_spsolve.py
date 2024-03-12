@@ -148,7 +148,7 @@ class _TorchSparseOpF(torch.autograd.Function):
         sol.requires_grad = tens_op.requires_grad or rhs.requires_grad
         ctx.sparse_op = sparse_op
         ctx.save_for_backward(tens_op, sol)
-        
+
         return sol
 
     @staticmethod
@@ -165,10 +165,10 @@ class _TorchSparseOpF(torch.autograd.Function):
 
         indices = tens_op.indices()
         sol_inds = sol[indices[1]]
-        #Complex gradient requires an additional conjugation
+        # Complex gradient requires an additional conjugation
         if sol_inds.dtype.is_complex:
             sol_inds = torch.conj(sol_inds)
-            
+
         sparse_op_diff_values = -(grad_rhs[indices[0]] * sol_inds)
         # Multi-rhs check
         if sparse_op_diff_values.ndim > 1:
@@ -176,7 +176,7 @@ class _TorchSparseOpF(torch.autograd.Function):
             indices = indices[..., None].expand(list(indices.shape) + [sol.shape[-1]]).reshape([2, -1])
 
         grad_op = torch.sparse_coo_tensor(values=sparse_op_diff_values, indices=indices, size=tens_op.shape,
-                                        dtype=tens_op.dtype, device=tens_op.device)
+                                          dtype=tens_op.dtype, device=tens_op.device)
 
         return grad_op, grad_rhs, None
 

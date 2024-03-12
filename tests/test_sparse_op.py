@@ -84,7 +84,7 @@ def test_gradcheck_single(create_sparse_system):
     with torch.no_grad():
         target_sol = torch_spsolve.spsolve(sparse_op.detach(), rhs) + torch.randn(size=[rhs.numel()], 
                                                                                   dtype=rhs.dtype, device=rhs.device)
-    loss_f = lambda x: 0.5 * torch.mean((x - target_sol)**2)
+    loss_f = lambda x: 0.5 * torch.mean(torch.abs((x - target_sol)**2))
 
     sparse_op_params.grad = sparse_op.grad = rhs.grad = None
     #Test grad in rhs only
@@ -94,7 +94,7 @@ def test_gradcheck_single(create_sparse_system):
 
     #Test grad in sparse_op only
     sparse_op_params.grad = sparse_op.grad = rhs.grad = None
-    loss_f(torch_spsolve.spsolve(sparse_op, rhs.detach())).backward()
+    loss_f(torch.abs(torch_spsolve.spsolve(sparse_op, rhs.detach()))).backward()
     assert rhs.grad is None
     assert torch.any(sparse_op_params.grad != 0.)
 
